@@ -23,7 +23,7 @@ self.addEventListener("fetch", e => {
   }
   // uygulamanın kendisi: önce internetten en yeni sürüm, internet yoksa kayıtlı sürüm
   if (req.mode === "navigate") {
-    e.respondWith(fetch(req).then(res => { caches.open(APP).then(c => c.put("./", res.clone())); return res; })
+    e.respondWith(fetch(req).then(res => { const copy = res.clone(); caches.open(APP).then(c => c.put("./", copy)); return res; })
       .catch(() => caches.match("./")));
     return;
   }

@@ -196,56 +196,56 @@ function saveCache(){ ls.set("tm_cache", { t:[...toilets.values()].slice(-600), 
   Object.assign(statsMap, c.s || {}); Object.assign(ownerMap, c.o || {});
 })();
 
-// ---------- OpenStreetMap tuvaletleri (Overpass) ----------
-let fetched = null, loading = false, timer = null;
+// ---------- OpenStreetMap tuvaletleri (Supabase'deki "toilets" ara servisi üzerinden) ----------
+// Dünya 0.02°'lik (~2 km) karelere bölünür; servis her kareyi OpenStreetMap'ten çekip 24 saat saklar.
+const TILE = 0.02;
+const tilesDone = new Set(), tilesBusy = new Set();
+let loading = false, timer = null;
 map.on("moveend", ()=>{ const c = map.getCenter(); ls.set("tm_view", [c.lat, c.lng]);
   clearTimeout(timer); timer = setTimeout(()=>{ loadArea(); render(); }, 500); });
 
-// try the main Overpass server, then a mirror; give each 20 s
-async function overpass(q){
-  const servers = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
-  let lastErr;
-  for (const url of servers){
-    const ctl = new AbortController(), to = setTimeout(()=>ctl.abort(), 20000);
-    try{
-      const r = await fetch(url, { method:"POST", body:"data="+encodeURIComponent(q), signal:ctl.signal,
-        headers:{ "Content-Type":"application/x-www-form-urlencoded" } });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return await r.json();
-    }catch(e){ lastErr = e; } finally { clearTimeout(to); }
-  }
-  throw lastErr;
+const yn = v => v==="yes" ? "Evet" : v==="no" ? "Hayır" : v ? v : "Bilinmiyor";
+function addOsm(el){
+  const t = el.tags || {}, id = "osm-" + el.type + "-" + el.id;
+  const isToilet = t.amenity === "toilets";
+  const type = t.amenity === "library" ? "lib" : (isToilet && !/customers/.test(t.access||"") ? "pub" : "biz");
+  toilets.set(id, { id, lat:el.lat, lon:el.lon, type, source:"osm",
+    name: t.name || (isToilet ? "Umumi tuvalet" : TYPES[type].label),
+    fee: yn(isToilet ? t.fee : (t["toilets:fee"] || t.fee)),
+    access: isToilet ? (t.access==="customers" ? "Müşterilere" : t.access==="private" ? "Özel" : "Herkese açık")
+                     : (t["toilets:access"]==="customers" ? "Müşterilere" : t["toilets:access"]==="yes" ? "Herkese açık" : "Muhtemelen müşterilere"),
+    wheelchair: yn(t["toilets:wheelchair"] || (isToilet ? t.wheelchair : undefined)),
+    hours: t.opening_hours || "" });
+}
+async function fetchTile(x, y){
+  const ctl = new AbortController(), to = setTimeout(()=>ctl.abort(), 40000);
+  try{
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/toilets?x=${x}&y=${y}`, { headers:{ apikey:SUPABASE_KEY }, signal:ctl.signal });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+    j.elements.forEach(addOsm); tilesDone.add(x+":"+y);
+  } finally { clearTimeout(to); }
 }
 
 async function loadArea(){
-  if (map.getZoom() < 14 || loading) return;
-  const b = map.getBounds();
-  if (fetched && fetched.contains(b)) return;
+  if (map.getZoom() < 14) return;
   if (!navigator.onLine){ toast("Çevrimdışısın: son görülen tuvaletler gösteriliyor"); return; }
-  const pb = b.pad(0.4); loading = true; render();
-  const bb = `${pb.getSouth()},${pb.getWest()},${pb.getNorth()},${pb.getEast()}`;
-  const q = `[out:json][timeout:25];(nwr["amenity"="toilets"](${bb});nwr["toilets"="yes"]["amenity"~"^(cafe|restaurant|fast_food|library|fuel|pub|bar|cinema|townhall)$"](${bb}););out center tags 400;`;
-  const osmJob = overpass(q).then(j=>{
-    for (const el of j.elements){
-      const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon; if (lat==null) continue;
-      const t = el.tags || {}, id = "osm-" + el.type + "-" + el.id;
-      const isToilet = t.amenity === "toilets";
-      const type = t.amenity === "library" ? "lib" : (isToilet && !/customers/.test(t.access||"") ? "pub" : "biz");
-      const yn = v => v==="yes" ? "Evet" : v==="no" ? "Hayır" : v ? v : "Bilinmiyor";
-      toilets.set(id, { id, lat, lon, type, source:"osm",
-        name: t.name || (isToilet ? "Umumi tuvalet" : TYPES[type].label),
-        fee: yn(isToilet ? t.fee : (t["toilets:fee"] || t.fee)),
-        access: isToilet ? (t.access==="customers" ? "Müşterilere" : t.access==="private" ? "Özel" : "Herkese açık")
-                         : (t["toilets:access"]==="customers" ? "Müşterilere" : t["toilets:access"]==="yes" ? "Herkese açık" : "Muhtemelen müşterilere"),
-        wheelchair: yn(t["toilets:wheelchair"] || (isToilet ? t.wheelchair : undefined)),
-        hours: t.opening_hours || "" });
-    }
-  }).catch(()=> toast("Tuvalet verisi alınamadı, tekrar dene"));
-  const ownJob = loadAdded(pb);
-  const [osmOk] = await Promise.allSettled([osmJob, ownJob]);
-  if (osmOk.status === "fulfilled") fetched = pb;
+  const b = map.getBounds().pad(0.2), c = map.getCenter();
+  const want = [];
+  for (let x = Math.floor(b.getWest()/TILE); x <= Math.floor(b.getEast()/TILE); x++)
+    for (let y = Math.floor(b.getSouth()/TILE); y <= Math.floor(b.getNorth()/TILE); y++)
+      if (!tilesDone.has(x+":"+y) && !tilesBusy.has(x+":"+y)) want.push([x, y]);
+  // en yakın kareler önce; bir seferde en fazla 12 kare
+  want.sort((p, q)=> Math.hypot((p[0]+.5)*TILE-c.lng, (p[1]+.5)*TILE-c.lat) - Math.hypot((q[0]+.5)*TILE-c.lng, (q[1]+.5)*TILE-c.lat));
+  const batch = want.slice(0, 12);
+  const pb = map.getBounds().pad(0.4);
+  loading = true; render();
+  batch.forEach(([x,y])=> tilesBusy.add(x+":"+y));
+  const jobs = batch.map(([x,y])=> fetchTile(x, y).then(()=>{ drawMarkers(); render(); }).finally(()=> tilesBusy.delete(x+":"+y)));
+  const results = await Promise.allSettled([...jobs, loadAdded(pb)]);
+  if (results.slice(0, batch.length).some(r=>r.status==="rejected")) toast("Bazı bölgelerin tuvalet verisi alınamadı, haritayı kaydırınca tekrar denenecek");
   await loadStats();
-  loading = false; saveCache(); drawMarkers(); render();
+  loading = tilesBusy.size > 0; saveCache(); drawMarkers(); render();
 }
 
 // ---------- Sunucu verisi (Supabase) ----------

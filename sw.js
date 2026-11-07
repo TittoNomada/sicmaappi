@@ -1,5 +1,5 @@
 // Çevrimdışı destek: uygulama dosyaları ve kütüphaneler önbellekten açılır, harita parçaları görüldükçe saklanır.
-const APP = "tm-app-v1", TILES = "tm-tiles-v1", MAX_TILES = 1500;
+const APP = "tm-app-v2", TILES = "tm-tiles-v1", MAX_TILES = 1500;
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(APP).then(c => c.addAll(SHELL))); self.skipWaiting(); });
@@ -21,7 +21,13 @@ self.addEventListener("fetch", e => {
     }));
     return;
   }
-  // uygulama ve kütüphaneler: önbellekten hemen aç, arkada güncelle
+  // uygulamanın kendisi: önce internetten en yeni sürüm, internet yoksa kayıtlı sürüm
+  if (req.mode === "navigate") {
+    e.respondWith(fetch(req).then(res => { caches.open(APP).then(c => c.put("./", res.clone())); return res; })
+      .catch(() => caches.match("./")));
+    return;
+  }
+  // kütüphaneler: önbellekten hemen aç, arkada güncelle
   e.respondWith(caches.open(APP).then(async c => {
     const hit = await c.match(req);
     const net = fetch(req).then(res => { if (res.ok || res.type === "opaque") c.put(req, res.clone()); return res; }).catch(() => hit);

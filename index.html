@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Tuvalet Haritası</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#fff;--fg:#1d2433;--mute:#6b7385;--line:#e6e8ee;--accent:#2f6fed;--pub:#2f6fed;--biz:#e8833a;--lib:#2e9e6a;--new:#8a4fd6;}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;color:var(--fg)}
+  #map{position:fixed;inset:0}
+  .topbar{position:fixed;top:10px;left:10px;right:10px;z-index:500;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
+  .pill{pointer-events:auto;background:var(--bg);border-radius:999px;padding:8px 14px;box-shadow:0 2px 10px rgba(0,0,0,.15);font-size:14px}
+  .pill b{font-weight:650}
+  .fabs{position:fixed;right:12px;bottom:calc(42vh + 12px);z-index:500;display:flex;flex-direction:column;gap:10px}
+  .fab{width:48px;height:48px;border-radius:50%;border:0;background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.2);font-size:20px;cursor:pointer}
+  .fab.primary{background:var(--accent);color:#fff;font-size:26px}
+  .sheet{position:fixed;left:0;right:0;bottom:0;height:42vh;z-index:600;background:var(--bg);border-radius:16px 16px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.15);display:flex;flex-direction:column}
+  .sheet header{padding:12px 16px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .sheet header h2{font-size:16px;margin:0}
+  .sheet .body{overflow-y:auto;padding:4px 16px 16px;flex:1}
+  .hint{color:var(--mute);font-size:13px}
+  .item{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+  .dot{width:12px;height:12px;border-radius:50%;flex:none}
+  .item .main{flex:1;min-width:0}
+  .item .name{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item .meta{font-size:12px;color:var(--mute)}
+  .item .dist{font-size:13px;color:var(--mute);flex:none}
+  .stars{color:#f2a900;letter-spacing:1px}
+  button.link{background:none;border:0;color:var(--accent);font-size:14px;cursor:pointer;padding:4px 0}
+  .btn{border:0;border-radius:10px;padding:11px 14px;font-size:15px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff}
+  .btn.ghost{background:#eef2fb;color:var(--accent)}
+  .btn:disabled{opacity:.5}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 11px;font-size:13px;cursor:pointer}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .facts{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px;margin:8px 0}
+  .facts span:nth-child(odd){color:var(--mute)}
+  .badge.ok{background:#e6f5ee;color:#2e9e6a}
+  .open{color:#2e9e6a;font-weight:600}
+  .closed{color:#c0392b;font-weight:600}
+  .photos{display:flex;gap:6px;overflow-x:auto;margin:8px 0}
+  .ph{position:relative;flex:none}
+  .ph img{height:90px;border-radius:8px;display:block;cursor:zoom-in}
+  .ph.pending img{opacity:.55}
+  .ph span{position:absolute;left:4px;bottom:4px;font-size:10px;background:#1d2433;color:#fff;padding:1px 5px;border-radius:4px}
+  .inp{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;font-size:15px;margin-top:8px}
+  .modrow{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+  .modrow img{width:64px;height:64px;object-fit:cover;border-radius:8px}
+  .modrow .btn{padding:8px 10px;font-size:13px}
+  .badge.warn{background:#fdecea;color:#c0392b}
+  .badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:6px;background:#f3ecfd;color:var(--new);font-weight:600}
+  .review{border-top:1px solid var(--line);padding:8px 0;font-size:14px}
+  .review .tags{font-size:12px;color:var(--mute)}
+  textarea,input[type=email]{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;font-size:15px}
+  .starpick button{font-size:28px;background:none;border:0;cursor:pointer;color:#d5d8e0;padding:0 2px}
+  .starpick button.on{color:#f2a900}
+  .cross{position:fixed;left:50%;top:29vh;transform:translate(-50%,-100%);z-index:550;font-size:36px;pointer-events:none;display:none}
+  .overlay{position:fixed;inset:0;z-index:1000;background:rgba(20,25,40,.55);display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{background:#fff;border-radius:16px;padding:22px;max-width:380px;width:100%}
+  .card h1{font-size:20px;margin:0 0 6px}
+  .card p{font-size:14px;color:var(--mute);margin:6px 0 14px;line-height:1.45}
+  .toast{position:fixed;left:50%;top:60px;transform:translateX(-50%);background:#1d2433;color:#fff;padding:9px 14px;border-radius:10px;font-size:14px;z-index:1100;display:none}
+  .pin{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4)}
+  .pin.unv{border-style:dashed;border-color:#fff}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="topbar">
+  <div class="pill"><b>🚻 Tuvalet Haritası</b></div>
+  <div class="pill" id="who"></div>
+</div>
+<div class="fabs">
+  <button class="fab" id="locBtn" title="Konumum">📍</button>
+  <button class="fab primary" id="addBtn" title="Tuvalet ekle">＋</button>
+</div>
+<div class="cross" id="cross">📍</div>
+<section class="sheet"><header id="sheetHead"></header><div class="body" id="sheetBody"></div></section>
+<div class="toast" id="toast"></div>
+
+<div class="overlay" id="login" style="display:none">
+  <form class="card" id="loginForm">
+    <h1>Giriş</h1>
+    <p>Değerlendirme yapmak ve tuvalet eklemek için giriş yap. Uygulamada e-postan kimseye görünmez, herkes "Anonim #…" olarak görünür.</p>
+    <input type="email" id="email" placeholder="ornek@mail.com" required autocomplete="email">
+    <div style="height:8px"></div>
+    <input type="password" id="pass" placeholder="Şifre (en az 6 karakter)" autocomplete="current-password" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;font-size:15px">
+    <p id="loginMsg" style="color:#c0392b;margin:8px 0;min-height:1em"></p>
+    <button class="btn" style="width:100%">Giriş yap</button>
+    <div style="height:8px"></div>
+    <button type="button" class="btn ghost" id="signupBtn" style="width:100%">Hesap oluştur</button>
+    <div style="text-align:center;margin-top:10px"><button type="button" class="link" id="skipBtn">Şimdilik sadece bak</button></div>
+  </form>
+</div>
+
+<script>
+// ---------- Ayarlar: Supabase projesinin bilgileri ----------
+const SUPABASE_URL = "https://xcimsfmjhjdzpryckxxa.supabase.co";
+const SUPABASE_KEY = "sb_publishable_V9VXnO5REiVi-rintGeRAg_3iMEe31M";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let user = null;                 // {uid}
+let isAdmin = false;
+let myClaims = [];               // kendi işletme sahipliği başvurularım
+let added = [];                  // kullanıcıların eklediği tuvaletler
+const statsMap = {};             // toiletId -> {n, avg, reports}
+const ownerMap = {};             // toiletId -> işletmenin girdiği resmi bilgi
+const statsFetched = new Set();  // bu oturumda sunucudan tazelenen kimlikler
+const detailCache = {}, reportCache = {}, photoCache = {};
+const REPORT_LIMIT = 3;          // bu kadar bildirimde tuvalet soluk görünür
+
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.style.display="block"; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none", 3500); }
+const fail = (e, what) => { console.error(e); toast(what + ": " + (e.message || "bağlantı hatası")); };
+const ls = { get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+             set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} } };
+
+// ---------- Giriş (e-posta + şifre) ----------
+function showWho(){
+  const w = document.getElementById("who");
+  if (!user){ w.innerHTML = `<button class="link" id="loginLink" style="padding:0">Giriş yap</button>`; document.getElementById("loginLink").onclick = needLogin; return; }
+  const pending = isAdmin ? ` <button class="link" id="modBtn" style="padding:0">· Moderasyon</button>` : "";
+  w.innerHTML = `Anonim #${user.uid.slice(0,4)}${pending} · <button class="link" id="logout" style="padding:0">Çıkış</button>`;
+  document.getElementById("logout").onclick = async ()=>{ await sb.auth.signOut(); user=null; isAdmin=false; myClaims=[]; showWho(); view={name:"list"}; render(); };
+  if (isAdmin) document.getElementById("modBtn").onclick = ()=>{ view={name:"admin"}; render(); };
+}
+async function setUser(session){
+  user = session ? { uid: session.user.id } : null; isAdmin = false; myClaims = [];
+  if (user){
+    const [adm, cl] = await Promise.all([ sb.rpc("is_admin"), sb.from("owner_claims").select("*").eq("user_id", user.uid) ]);
+    isAdmin = adm.data === true; myClaims = cl.data || [];
+  }
+  showWho();
+}
+async function doAuth(mode){
+  const email = document.getElementById("email").value.trim(), pass = document.getElementById("pass").value;
+  const msg = document.getElementById("loginMsg");
+  if (!email || pass.length < 6){ msg.textContent = "E-posta ve en az 6 karakterli şifre gir."; return; }
+  msg.textContent = "Bekle…";
+  const { data, error } = mode === "up" ? await sb.auth.signUp({ email, password: pass })
+                                        : await sb.auth.signInWithPassword({ email, password: pass });
+  if (error){ msg.textContent = error.message === "Invalid login credentials" ? "E-posta ya da şifre yanlış." : error.message; return; }
+  if (!data.session){ msg.textContent = "Hesap oluştu ama giriş açılmadı: Supabase'de 'Confirm email' kapalı olmalı."; return; }
+  msg.textContent = ""; document.getElementById("pass").value = "";
+  document.getElementById("login").style.display = "none";
+  await setUser(data.session); render();
+}
+document.getElementById("loginForm").addEventListener("submit", e=>{ e.preventDefault(); doAuth("in"); });
+document.getElementById("signupBtn").onclick = ()=> doAuth("up");
+document.getElementById("skipBtn").onclick = ()=> document.getElementById("login").style.display = "none";
+function needLogin(){ document.getElementById("login").style.display = "flex"; }
+sb.auth.getSession().then(async ({ data })=>{ await setUser(data.session); if (!user) needLogin(); render(); });
+
+// ---------- Harita ----------
+const map = L.map("map", { zoomControl:false }).setView(ls.get("tm_view", [41.0369, 28.9850]), 16);
+// OpenFreeMap: free OSM-based map, no API key, works when the page is opened as a local file
+L.maplibreGL({
+  style: "https://tiles.openfreemap.org/styles/liberty",
+  attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+const layer = L.layerGroup().addTo(map);
+let me = null, meMarker = null;
+
+const TYPES = { pub:{label:"Umumi", color:"var(--pub)", hex:"#2f6fed"}, biz:{label:"İşletme", color:"var(--biz)", hex:"#e8833a"},
+                lib:{label:"Kütüphane", color:"var(--lib)", hex:"#2e9e6a"} };
+const toilets = new Map(); // OSM tuvaletleri: id -> toilet
+
+function locate(){
+  if (!navigator.geolocation){ toast("Konum desteklenmiyor"); return; }
+  navigator.geolocation.getCurrentPosition(p=>{
+    me = [p.coords.latitude, p.coords.longitude];
+    if (meMarker) meMarker.setLatLng(me);
+    else meMarker = L.circleMarker(me, {radius:8, color:"#fff", weight:3, fillColor:"#2f6fed", fillOpacity:1}).addTo(map);
+    map.setView(me, 16); render();
+  }, ()=> toast("Konum alınamadı, haritayı elle kaydır"), { enableHighAccuracy:true, timeout:10000 });
+}
+document.getElementById("locBtn").onclick = locate;
+locate();
+
+// ---------- Çevrimdışı: son görülen bölge bu cihazda saklanır ----------
+function saveCache(){ ls.set("tm_cache", { t:[...toilets.values()].slice(-600), a:added, s:statsMap, o:ownerMap }); }
+(function loadCache(){
+  const c = ls.get("tm_cache", null); if (!c) return;
+  (c.t||[]).forEach(t=>toilets.set(t.id, t)); added = c.a || [];
+  Object.assign(statsMap, c.s || {}); Object.assign(ownerMap, c.o || {});
+})();
+
+// ---------- OpenStreetMap tuvaletleri (Overpass) ----------
+let fetched = null, loading = false, timer = null;
+map.on("moveend", ()=>{ const c = map.getCenter(); ls.set("tm_view", [c.lat, c.lng]);
+  clearTimeout(timer); timer = setTimeout(()=>{ loadArea(); render(); }, 500); });
+
+// try the main Overpass server, then a mirror; give each 20 s
+async function overpass(q){
+  const servers = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
+  let lastErr;
+  for (const url of servers){
+    const ctl = new AbortController(), to = setTimeout(()=>ctl.abort(), 20000);
+    try{
+      const r = await fetch(url, { method:"POST", body:"data="+encodeURIComponent(q), signal:ctl.signal,
+        headers:{ "Content-Type":"application/x-www-form-urlencoded" } });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    }catch(e){ lastErr = e; } finally { clearTimeout(to); }
+  }
+  throw lastErr;
+}
+
+async function loadArea(){
+  if (map.getZoom() < 14 || loading) return;
+  const b = map.getBounds();
+  if (fetched && fetched.contains(b)) return;
+  if (!navigator.onLine){ toast("Çevrimdışısın: son görülen tuvaletler gösteriliyor"); return; }
+  const pb = b.pad(0.4); loading = true; render();
+  const bb = `${pb.getSouth()},${pb.getWest()},${pb.getNorth()},${pb.getEast()}`;
+  const q = `[out:json][timeout:25];(nwr["amenity"="toilets"](${bb});nwr["toilets"="yes"]["amenity"~"^(cafe|restaurant|fast_food|library|fuel|pub|bar|cinema|townhall)$"](${bb}););out center tags 400;`;
+  const osmJob = overpass(q).then(j=>{
+    for (const el of j.elements){
+      const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon; if (lat==null) continue;
+      const t = el.tags || {}, id = "osm-" + el.type + "-" + el.id;
+      const isToilet = t.amenity === "toilets";
+      const type = t.amenity === "library" ? "lib" : (isToilet && !/customers/.test(t.access||"") ? "pub" : "biz");
+      const yn = v => v==="yes" ? "Evet" : v==="no" ? "Hayır" : v ? v : "Bilinmiyor";
+      toilets.set(id, { id, lat, lon, type, source:"osm",
+        name: t.name || (isToilet ? "Umumi tuvalet" : TYPES[type].label),
+        fee: yn(isToilet ? t.fee : (t["toilets:fee"] || t.fee)),
+        access: isToilet ? (t.access==="customers" ? "Müşterilere" : t.access==="private" ? "Özel" : "Herkese açık")
+                         : (t["toilets:access"]==="customers" ? "Müşterilere" : t["toilets:access"]==="yes" ? "Herkese açık" : "Muhtemelen müşterilere"),
+        wheelchair: yn(t["toilets:wheelchair"] || (isToilet ? t.wheelchair : undefined)),
+        hours: t.opening_hours || "" });
+    }
+  }).catch(()=> toast("Tuvalet verisi alınamadı, tekrar dene"));
+  const ownJob = loadAdded(pb);
+  const [osmOk] = await Promise.allSettled([osmJob, ownJob]);
+  if (osmOk.status === "fulfilled") fetched = pb;
+  await loadStats();
+  loading = false; saveCache(); drawMarkers(); render();
+}
+
+// ---------- Sunucu verisi (Supabase) ----------
+const fromRow = r => ({ id:"user-"+r.id, dbId:r.id, lat:r.lat, lon:r.lon, type:r.type, name:r.name, fee:r.fee, access:r.access,
+  wheelchair:"Bilinmiyor", hours:"", by:r.created_by, confirms:(r.confirmations||[]).map(c=>c.user_id), source:"user" });
+async function loadAdded(pb){
+  const { data, error } = await sb.from("toilets_added").select("*, confirmations(user_id)")
+    .gte("lat", pb.getSouth()).lte("lat", pb.getNorth()).gte("lon", pb.getWest()).lte("lon", pb.getEast()).limit(500);
+  if (error) return fail(error, "Eklenen tuvaletler alınamadı");
+  for (const r of data){ const t = fromRow(r); const i = added.findIndex(a=>a.id===t.id); i>=0 ? added[i]=t : added.push(t); }
+}
+async function loadStats(){
+  const ids = all().map(t=>t.id).filter(id=>!statsFetched.has(id));
+  for (let i=0; i<ids.length; i+=100){
+    const chunk = ids.slice(i, i+100);
+    const [st, ow] = await Promise.all([ sb.from("toilet_stats").select("*").in("toilet_id", chunk),
+                                         sb.from("owner_info").select("*").in("toilet_id", chunk) ]);
+    if (st.error) return fail(st.error, "Puanlar alınamadı");
+    chunk.forEach(id=>{ statsMap[id] = { n:0, avg:0, reports:0 }; delete ownerMap[id]; statsFetched.add(id); });
+    st.data.forEach(r=> statsMap[r.toilet_id] = { n:r.n, avg:r.avg || 0, reports:r.reports });
+    (ow.data || []).forEach(r=> ownerMap[r.toilet_id] = r);
+  }
+}
+async function signedUrls(rows){
+  if (!rows.length) return rows;
+  const { data, error } = await sb.storage.from("photos").createSignedUrls(rows.map(r=>r.path), 3600);
+  if (error){ fail(error, "Fotoğraflar alınamadı"); return []; }
+  return rows.map((r,i)=>({ ...r, url: data[i]?.signedUrl })).filter(r=>r.url);
+}
+async function loadReviews(id){
+  const [rv, rp, ph, ow] = await Promise.all([
+    sb.from("reviews").select("*").eq("toilet_id", id).order("updated_at", { ascending:false }).limit(100),
+    sb.from("reports").select("user_id, reason").eq("toilet_id", id).limit(500),
+    sb.from("photos").select("*").eq("toilet_id", id).neq("status", "rejected").order("created_at", { ascending:false }).limit(20),
+    sb.from("owner_info").select("*").eq("toilet_id", id).maybeSingle() ]);
+  if (rv.error) return fail(rv.error, "Değerlendirmeler alınamadı");
+  if (rp.error) return fail(rp.error, "Bildirimler alınamadı");
+  const data = rv.data;
+  detailCache[id] = data; reportCache[id] = rp.data;
+  photoCache[id] = ph.error ? [] : await signedUrls(ph.data.filter(p=>p.status==="approved" || (user && p.user_id===user.uid)));
+  if (ow.data) ownerMap[id] = ow.data; else delete ownerMap[id];
+  statsMap[id] = { n:data.length, avg: data.length ? data.reduce((s,r)=>s+r.stars,0)/data.length : 0, reports: rp.data.length };
+  statsFetched.add(id);
+}
+
+// ---------- "Şu an açık mı?" (OSM opening_hours'ın yaygın biçimleri) ----------
+const DAYS = ["Mo","Tu","We","Th","Fr","Sa","Su"];
+function parseDays(s){
+  const set = new Set();
+  for (const part of s.split(",")){
+    const m = part.trim().match(/^(Mo|Tu|We|Th|Fr|Sa|Su)(?:-(Mo|Tu|We|Th|Fr|Sa|Su))?$/);
+    if (!m) return null;
+    let i = DAYS.indexOf(m[1]); const j = m[2] ? DAYS.indexOf(m[2]) : i;
+    for (;;){ set.add(i); if (i === j) break; i = (i+1) % 7; }
+  }
+  return set;
+}
+// true = açık, false = kapalı, null = bilinmiyor / anlaşılamadı
+function isOpen(spec, d = new Date()){
+  if (!spec) return null;
+  spec = spec.trim(); if (spec === "24/7") return true;
+  const today = (d.getDay()+6) % 7, mins = d.getHours()*60 + d.getMinutes();
+  let rule = null, any = false;
+  for (let r of spec.split(";")){
+    r = r.trim(); if (!r || /^(PH|SH)\b/.test(r)) continue;
+    const m = r.match(/^(?:([A-Za-z,\-]+)\s+)?(off|closed|\d{1,2}:\d{2}-\d{1,2}:\d{2}(?:\s*,\s*\d{1,2}:\d{2}-\d{1,2}:\d{2})*)$/);
+    if (!m) return null;
+    const days = m[1] ? parseDays(m[1]) : null;
+    if (m[1] && !days) return null;
+    any = true;
+    if (!days || days.has(today)) rule = m[2];   // sonraki kural öncekini geçersiz kılar
+  }
+  if (!any) return null;
+  if (rule === null || rule === "off" || rule === "closed") return false;
+  return rule.split(",").some(rg=>{
+    const [s, e] = rg.trim().split("-").map(t=>{ const [h, mi] = t.split(":").map(Number); return h*60 + mi; });
+    return e > s ? (mins >= s && mins < e) : (mins >= s || mins < e);
+  });
+}
+const hoursOf = t => ownerMap[t.id]?.hours || t.hours || "";
+const openTag = t => { const o = isOpen(hoursOf(t)); return o===true ? ' · <span class="open">Açık</span>' : o===false ? ' · <span class="closed">Kapalı</span>' : ""; };
+
+// ---------- Filtreler ----------
+const FILTERS = [["free","Ücretsiz"],["open","Şu an açık"],["wheel","Engelli erişimi"],["top","4★ ve üstü"]];
+const filters = ls.get("tm_filters", {});
+function visible(t){
+  const s = stats(t.id);
+  if (filters.free && t.fee !== "Hayır") return false;
+  if (filters.open && isOpen(hoursOf(t)) === false) return false;   // saati bilinmeyenler gösterilir
+  if (filters.wheel && t.wheelchair !== "Evet") return false;
+  if (filters.top && !(s.n && s.avg >= 4)) return false;
+  return true;
+}
+
+// ---------- Yardımcılar ----------
+function all(){ return [...toilets.values(), ...added]; }
+function dist(a, b){
+  const R=6371000, t=x=>x*Math.PI/180, dLa=t(b[0]-a[0]), dLo=t(b[1]-a[1]);
+  const h=Math.sin(dLa/2)**2+Math.cos(t(a[0]))*Math.cos(t(b[0]))*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.sqrt(h));
+}
+const fmtDist = m => m < 1000 ? Math.round(m/10)*10 + " m" : (m/1000).toFixed(1) + " km";
+const stats = id => statsMap[id] || { n:0, avg:0, reports:0 };
+const flagged = id => stats(id).reports >= REPORT_LIMIT;
+const starStr = a => "★".repeat(Math.round(a)) + "☆".repeat(5-Math.round(a));
+const esc = s => String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const unverified = t => t.source==="user" && (t.confirms||[]).length < 2;
+const find = id => all().find(t=>t.id===id);
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const back = to => ()=>{ view = to; render(); };
+
+function drawMarkers(){
+  layer.clearLayers();
+  for (const t of all().filter(visible)){
+    const icon = L.divIcon({ className:"", iconSize:[22,22], iconAnchor:[11,11],
+      html:`<div class="pin ${unverified(t)?"unv":""}" style="opacity:${flagged(t.id)?0.35:1};background:${t.source==="user"?"#8a4fd6":TYPES[t.type].hex}"></div>` });
+    L.marker([t.lat, t.lon], { icon }).on("click", ()=> openDetail(t.id)).addTo(layer);
+  }
+}
+
+// ---------- Alt panel ----------
+let view = { name:"list" };
+const head = document.getElementById("sheetHead"), body = document.getElementById("sheetBody");
+const VIEWS = {};
+function render(){
+  document.getElementById("cross").style.display = view.name==="add" ? "block" : "none";
+  (VIEWS[view.name] || VIEWS.list)();
+}
+async function openDetail(id){
+  view = { name:"detail", id }; render();
+  await loadReviews(id); if (view.name==="detail" && view.id===id) render();
+}
+const title = (txt, backLabel) => `<button class="link" id="back">‹ ${backLabel}</button><h2 style="flex:1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${txt}</h2><span style="width:50px"></span>`;
+
+VIEWS.list = function(){
+  const ref = me || [map.getCenter().lat, map.getCenter().lng];
+  const list = all().filter(visible).map(t=>({ t, d: dist(ref, [t.lat, t.lon]) })).sort((a,b)=>a.d-b.d).slice(0, 25);
+  head.innerHTML = `<h2>${me ? "Yakınındaki tuvaletler" : "Bu bölgedeki tuvaletler"}</h2><span class="hint">${loading ? "Yükleniyor…" : list.length + " sonuç"}</span>`;
+  const chips = `<div class="row" id="flt">${FILTERS.map(([k,l])=>`<button class="chip ${filters[k]?"on":""}" data-k="${k}">${l}</button>`).join("")}</div>`;
+  let content;
+  if (map.getZoom() < 14 && !list.length && !loading) content = `<p class="hint">Tuvaletleri görmek için haritayı yakınlaştır.</p>`;
+  else if (!list.length) content = `<p class="hint">${loading ? "Tuvaletler aranıyor…" : Object.values(filters).some(Boolean) ? "Filtrelere uyan tuvalet yok." : "Bu bölgede kayıtlı tuvalet yok. ＋ ile ilkini ekleyebilirsin."}</p>`;
+  else content = list.map(({t,d})=>{
+    const s = stats(t.id), color = t.source==="user" ? "var(--new)" : TYPES[t.type].color;
+    return `<div class="item" data-id="${t.id}"><span class="dot" style="background:${color}"></span>
+      <div class="main"><div class="name">${esc(ownerMap[t.id]?.business || t.name)}</div>
+      <div class="meta">${TYPES[t.type].label} · ${t.fee==="Evet"?"Ücretli":t.fee==="Hayır"?"Ücretsiz":"Ücret ?"} · ${s.n ? `<span class="stars">${starStr(s.avg)}</span> (${s.n})` : "Henüz puan yok"}${openTag(t)}
+      ${unverified(t) ? ' · <span class="badge">Doğrulanmamış</span>' : ""}${flagged(t.id) ? ' · <span class="badge warn">⚠ Sorun bildirildi</span>' : ""}</div></div>
+      <div class="dist">${fmtDist(d)}</div></div>`;
+  }).join("");
+  body.innerHTML = chips + (filters.open ? `<p class="hint" style="margin:0 0 4px;font-size:12px">Saati bilinmeyen tuvaletler de gösteriliyor.</p>` : "") + content;
+  body.querySelectorAll("#flt .chip").forEach(c=> c.onclick = ()=>{ filters[c.dataset.k] = !filters[c.dataset.k]; ls.set("tm_filters", filters); drawMarkers(); render(); });
+  body.querySelectorAll(".item").forEach(el=> el.onclick = ()=>{
+    const t = find(el.dataset.id); map.panTo([t.lat, t.lon]); openDetail(el.dataset.id); });
+};
+
+VIEWS.detail = function(){
+  const t = find(view.id); if (!t){ view={name:"list"}; return render(); }
+  const s = stats(t.id), rs = detailCache[t.id], ow = ownerMap[t.id], photos = photoCache[t.id] || [];
+  const mine = user && rs && rs.find(r=>r.user_id===user.uid);
+  const tagCount = {}; (rs||[]).forEach(r=>r.tags.forEach(g=>tagCount[g]=(tagCount[g]||0)+1));
+  const d = me ? " · " + fmtDist(dist(me,[t.lat,t.lon])) : "";
+  const hrs = hoursOf(t), op = isOpen(hrs);
+  const claim = myClaims.find(c=>c.toilet_id===t.id);
+  head.innerHTML = title(esc(ow?.business || t.name), "Liste");
+  const conf = (t.confirms||[]).length, canConfirm = unverified(t) && user && t.by!==user.uid && !(t.confirms||[]).includes(user.uid);
+  body.innerHTML = `
+    <div style="margin-top:8px">${s.n ? `<span class="stars" style="font-size:18px">${starStr(s.avg)}</span> <b>${s.avg.toFixed(1)}</b> <span class="hint">(${s.n} değerlendirme)</span>` : `<span class="hint">${rs ? "Henüz değerlendirme yok" : "Yükleniyor…"}</span>`}</div>
+    ${ow ? `<p><span class="badge ok">✓ İşletmenin bilgisi</span>${ow.note ? ` <span>${esc(ow.note)}</span>` : ""}</p>` : ""}
+    ${unverified(t) ? `<p><span class="badge">Doğrulanmamış · ${conf}/2 onay</span> <span class="hint">Bir kullanıcı ekledi.</span></p>` : ""}
+    ${reportSummary(t.id)}
+    ${photos.length ? `<div class="photos">${photos.map(p=>`<div class="ph ${p.status==="pending"?"pending":""}"><img src="${esc(p.url)}" alt="">${p.status==="pending"?`<span>Onay bekliyor</span>`:""}</div>`).join("")}</div>` : ""}
+    <div class="facts">
+      <span>Tür</span><span>${TYPES[t.type].label}${d}</span>
+      <span>Ücret</span><span>${esc(t.fee)}</span>
+      <span>Kimlere açık</span><span>${esc(t.access)}</span>
+      <span>Engelli erişimi</span><span>${esc(t.wheelchair)}</span>
+      ${hrs ? `<span>Saatler</span><span>${esc(hrs)}${op===true?' · <span class="open">Şu an açık</span>':op===false?' · <span class="closed">Şu an kapalı</span>':""}</span>` : ""}
+    </div>
+    ${Object.keys(tagCount).length ? `<div class="row">${Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).map(([g,n])=>`<span class="chip">${esc(g)} · ${n}</span>`).join("")}</div>` : ""}
+    <div class="row">
+      <button class="btn" id="rev" ${rs ? "" : "disabled"}>${mine ? "Değerlendirmemi düzenle" : "Değerlendir"}</button>
+      <a class="btn ghost" style="text-decoration:none" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${t.lat},${t.lon}&travelmode=walking">Yol tarifi</a>
+      ${canConfirm ? `<button class="btn ghost" id="confirm">Burası gerçekten var</button>` : ""}
+    </div>
+    <div class="row" style="align-items:center">
+      <label class="link" style="cursor:pointer">📷 Fotoğraf ekle<input type="file" id="photoIn" accept="image/*" style="display:none"></label>
+      <button class="link" id="reportBtn" ${rs ? "" : "disabled"}>⚠ ${myReport(t.id) ? "Bildirimimi değiştir (" + esc(myReport(t.id)) + ")" : "Sorun bildir"}</button>
+      ${t.type !== "pub" ? (claim?.status==="approved" ? `<button class="link" id="ownerBtn">🏪 İşletme bilgilerini düzenle</button>`
+          : claim?.status==="pending" ? `<span class="hint">🏪 Sahiplik başvurun inceleniyor</span>`
+          : claim?.status==="rejected" ? "" : `<button class="link" id="claimBtn">🏪 Bu işletme benim</button>`) : ""}
+    </div>
+    ${(rs||[]).map(r=>`<div class="review"><span class="stars">${starStr(r.stars)}</span> <span class="hint">Anonim #${r.user_id.slice(0,4)} · ${new Date(r.updated_at).toLocaleDateString("tr-TR")}</span>
+      ${r.tags.length ? `<div class="tags">${r.tags.map(esc).join(" · ")}</div>` : ""}${r.text ? `<div>${esc(r.text)}</div>` : ""}</div>`).join("")}
+    ${t.source==="osm" ? `<p class="hint" style="font-size:11px">Konum bilgisi: OpenStreetMap</p>` : ""}`;
+  document.getElementById("back").onclick = back({ name:"list" });
+  const guard = fn => ()=>{ if (!user) return needLogin(); fn(); };
+  document.getElementById("rev").onclick = guard(()=>{ view={name:"review", id:t.id}; render(); });
+  document.getElementById("reportBtn").onclick = guard(()=>{ view={name:"report", id:t.id}; render(); });
+  const cb = document.getElementById("claimBtn"); if (cb) cb.onclick = guard(()=>{ view={name:"claim", id:t.id}; render(); });
+  const ob = document.getElementById("ownerBtn"); if (ob) ob.onclick = guard(()=>{ view={name:"owner", id:t.id}; render(); });
+  const pin = document.getElementById("photoIn");
+  pin.onclick = e=>{ if (!user){ e.preventDefault(); needLogin(); } };
+  pin.onchange = ()=>{ if (pin.files[0]) uploadPhoto(t, pin.files[0]); };
+  body.querySelectorAll(".ph img").forEach(img=> img.onclick = ()=> showPhoto(img.src));
+  const c = document.getElementById("confirm");
+  if (c) c.onclick = async ()=>{
+    c.disabled = true;
+    const { error } = await sb.from("confirmations").insert({ toilet_id: t.dbId });
+    if (error){ c.disabled = false; return fail(error, "Onay kaydedilemedi"); }
+    t.confirms = [...t.confirms, user.uid]; toast("Onayın kaydedildi"); drawMarkers(); render();
+  };
+};
+
+// ---------- Fotoğraf ----------
+function shrink(file){
+  return new Promise((res, rej)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const k = Math.min(1, 1280 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.round(img.width*k); c.height = Math.round(img.height*k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(img.src);
+      c.toBlob(b=> b ? res(b) : rej(new Error("Görsel işlenemedi")), "image/jpeg", 0.8);
+    };
+    img.onerror = ()=> rej(new Error("Görsel açılamadı"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+async function uploadPhoto(t, file){
+  toast("Fotoğraf yükleniyor…");
+  try{
+    const blob = await shrink(file), path = `${user.uid}/${uuid()}.jpg`;
+    const up = await sb.storage.from("photos").upload(path, blob, { contentType:"image/jpeg" });
+    if (up.error) return fail(up.error, "Fotoğraf yüklenemedi");
+    const { error } = await sb.from("photos").insert({ toilet_id:t.id, path });
+    if (error) return fail(error, "Fotoğraf kaydedilemedi");
+    toast("Fotoğrafın yüklendi. Onaylanınca herkes görecek."); openDetail(t.id);
+  }catch(e){ fail(e, "Fotoğraf yüklenemedi"); }
+}
+function showPhoto(src){
+  const o = document.createElement("div"); o.className = "overlay"; o.style.cursor = "zoom-out";
+  o.innerHTML = `<img src="${esc(src)}" style="max-width:100%;max-height:100%;border-radius:10px">`;
+  o.onclick = ()=> o.remove(); document.body.appendChild(o);
+}
+
+// ---------- Değerlendirme ----------
+const TAGS = ["Temiz","Tuvalet kağıdı var","Sabun var","Kuyruk yok","Bebek bakım","Kötü koku","Bozuk/kirli"];
+VIEWS.review = function(){
+  const t = find(view.id), rs = detailCache[t.id] || [], mine = rs.find(r=>r.user_id===user.uid);
+  let stars = mine ? mine.stars : 0; const tags = new Set(mine ? mine.tags : []);
+  head.innerHTML = title("Değerlendir", "Vazgeç");
+  body.innerHTML = `
+    <p class="hint" style="margin:10px 0 4px">${esc(t.name)}</p>
+    <div class="starpick" id="sp">${[1,2,3,4,5].map(i=>`<button data-i="${i}">★</button>`).join("")}</div>
+    <div class="row" id="tg">${TAGS.map(g=>`<button class="chip" data-g="${g}">${g}</button>`).join("")}</div>
+    <textarea id="txt" rows="2" maxlength="300" placeholder="İstersen kısa bir not (isteğe bağlı)">${mine ? esc(mine.text) : ""}</textarea>
+    <div style="height:10px"></div><button class="btn" id="save" style="width:100%">Kaydet</button>`;
+  const save = document.getElementById("save");
+  const paint = ()=>{
+    body.querySelectorAll("#sp button").forEach(b=>b.classList.toggle("on", +b.dataset.i <= stars));
+    body.querySelectorAll("#tg .chip").forEach(b=>b.classList.toggle("on", tags.has(b.dataset.g)));
+    save.disabled = !stars;
+  };
+  body.querySelectorAll("#sp button").forEach(b=> b.onclick = ()=>{ stars = +b.dataset.i; paint(); });
+  body.querySelectorAll("#tg .chip").forEach(b=> b.onclick = ()=>{ tags.has(b.dataset.g) ? tags.delete(b.dataset.g) : tags.add(b.dataset.g); paint(); });
+  document.getElementById("back").onclick = back({ name:"detail", id:t.id });
+  save.onclick = async ()=>{
+    save.disabled = true; save.textContent = "Kaydediliyor…";
+    const row = { toilet_id:t.id, user_id:user.uid, stars, tags:[...tags], text:document.getElementById("txt").value.trim() };
+    // one review per person: insert or update own row; the server keeps the old version
+    const { error } = await sb.from("reviews").upsert(row, { onConflict:"toilet_id,user_id" });
+    if (error){ save.disabled = false; save.textContent = "Kaydet"; return fail(error, "Kaydedilemedi"); }
+    toast("Değerlendirmen kaydedildi"); openDetail(t.id);
+  };
+  paint();
+};
+
+// ---------- Sorun bildirimi ----------
+const REASONS = ["Kapalı", "Tuvalet yok", "Yeri yanlış"];
+const myReport = id => user && (reportCache[id]||[]).find(r=>r.user_id===user.uid)?.reason;
+function reportSummary(id){
+  const rp = reportCache[id] || []; if (!rp.length) return "";
+  const c = {}; rp.forEach(r=> c[r.reason] = (c[r.reason]||0) + 1);
+  const txt = Object.entries(c).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${esc(k)} (${n})`).join(", ");
+  return `<p><span class="badge ${rp.length >= REPORT_LIMIT ? "warn" : ""}">⚠ ${rp.length} bildirim</span> <span class="hint">${txt}</span></p>`;
+}
+VIEWS.report = function(){
+  const t = find(view.id); let reason = myReport(t.id) || "";
+  head.innerHTML = title("Sorun bildir", "Vazgeç");
+  body.innerHTML = `
+    <p class="hint" style="margin:10px 0 4px">${esc(t.name)} · ${REPORT_LIMIT} kişi bildirince haritada soluk görünür. Hiçbir kayıt silinmez.</p>
+    <div class="row" id="rs">${REASONS.map(r=>`<button class="chip" data-r="${r}">${r}</button>`).join("")}</div>
+    <button class="btn" id="send" style="width:100%">Gönder</button>`;
+  const send = document.getElementById("send");
+  const paint = ()=>{ body.querySelectorAll("#rs .chip").forEach(c=>c.classList.toggle("on", c.dataset.r===reason)); send.disabled = !reason; };
+  body.querySelectorAll("#rs .chip").forEach(c=> c.onclick = ()=>{ reason = c.dataset.r; paint(); });
+  document.getElementById("back").onclick = back({ name:"detail", id:t.id });
+  send.onclick = async ()=>{
+    send.disabled = true; send.textContent = "Gönderiliyor…";
+    const { error } = await sb.from("reports").upsert({ toilet_id:t.id, user_id:user.uid, reason }, { onConflict:"toilet_id,user_id" });
+    if (error){ send.disabled = false; send.textContent = "Gönder"; return fail(error, "Gönderilemedi"); }
+    toast("Bildirimin kaydedildi"); await openDetail(t.id); drawMarkers();
+  };
+  paint();
+};
+
+// ---------- İşletme sahipliği ----------
+const field = (id, ph, val="", max=80) => `<input id="${id}" maxlength="${max}" placeholder="${ph}" value="${esc(val)}" class="inp">`;
+VIEWS.claim = function(){
+  const t = find(view.id);
+  head.innerHTML = title("Bu işletme benim", "Vazgeç");
+  body.innerHTML = `
+    <p class="hint" style="margin:10px 0 4px">Başvurunu yönetici inceler ve seninle iletişime geçip doğrular. Onaylanınca bu tuvalet için saat ve not girebilirsin; yanında "İşletmenin bilgisi" yazar.</p>
+    ${field("biz", "İşletmenin adı", t.name)}${field("contact", "İletişim (iş e-postası ya da telefon)", "", 120)}
+    <button class="btn" id="send" style="width:100%;margin-top:10px">Başvur</button>`;
+  document.getElementById("back").onclick = back({ name:"detail", id:t.id });
+  const send = document.getElementById("send");
+  send.onclick = async ()=>{
+    const business = document.getElementById("biz").value.trim(), contact = document.getElementById("contact").value.trim();
+    if (business.length < 2 || contact.length < 5) return toast("İşletme adı ve iletişim bilgisi gerekli");
+    send.disabled = true;
+    const { data, error } = await sb.from("owner_claims").insert({ toilet_id:t.id, business, contact }).select().single();
+    if (error){ send.disabled = false; return fail(error, "Başvuru gönderilemedi"); }
+    myClaims.push(data); toast("Başvurun alındı"); view = { name:"detail", id:t.id }; render();
+  };
+};
+VIEWS.owner = function(){
+  const t = find(view.id), ow = ownerMap[t.id] || {};
+  head.innerHTML = title("İşletme bilgileri", "Vazgeç");
+  body.innerHTML = `
+    ${field("biz", "Görünen ad", ow.business || myClaims.find(c=>c.toilet_id===t.id)?.business || t.name)}
+    ${field("hrs", "Açılış saatleri, ör. Mo-Fr 08:00-20:00; Sa 10:00-18:00", ow.hours || t.hours, 120)}
+    <p class="hint" style="font-size:12px;margin:4px 0">Günler: Mo Tu We Th Fr Sa Su. Her gün açıksa "24/7" yaz. Kapalı gün: "Su off".</p>
+    ${field("note", "Not, ör. Müşteri olmayanlar da kullanabilir", ow.note || "", 200)}
+    <button class="btn" id="send" style="width:100%;margin-top:10px">Kaydet</button>`;
+  document.getElementById("back").onclick = back({ name:"detail", id:t.id });
+  const send = document.getElementById("send");
+  send.onclick = async ()=>{
+    const row = { toilet_id:t.id, business:document.getElementById("biz").value.trim(), hours:document.getElementById("hrs").value.trim(),
+                  note:document.getElementById("note").value.trim(), updated_by:user.uid, updated_at:new Date().toISOString() };
+    if (row.hours && isOpen(row.hours) === null) return toast("Saat biçimi anlaşılamadı. Örnekteki gibi yaz.");
+    send.disabled = true;
+    const { error } = await sb.from("owner_info").upsert(row, { onConflict:"toilet_id" });
+    if (error){ send.disabled = false; return fail(error, "Kaydedilemedi"); }
+    toast("İşletme bilgileri kaydedildi"); openDetail(t.id);
+  };
+};
+
+// ---------- Moderasyon (yalnızca yöneticiler) ----------
+VIEWS.admin = async function(){
+  head.innerHTML = title("Moderasyon", "Harita");
+  document.getElementById("back").onclick = back({ name:"list" });
+  body.innerHTML = `<p class="hint">Yükleniyor…</p>`;
+  const [ph, cl] = await Promise.all([
+    sb.from("photos").select("*").eq("status", "pending").order("created_at").limit(30),
+    sb.from("owner_claims").select("*").eq("status", "pending").order("created_at").limit(30) ]);
+  if (ph.error || cl.error) return fail(ph.error || cl.error, "Moderasyon listesi alınamadı");
+  const photos = await signedUrls(ph.data);
+  if (view.name !== "admin") return;
+  const nameOf = id => esc(find(id)?.name || id);
+  body.innerHTML = `
+    <h3 style="font-size:15px;margin:12px 0 4px">Onay bekleyen fotoğraflar (${photos.length})</h3>
+    ${photos.map(p=>`<div class="modrow"><img src="${esc(p.url)}" alt=""><div style="flex:1"><div>${nameOf(p.toilet_id)}</div><div class="hint">Anonim #${p.user_id.slice(0,4)}</div></div>
+      <button class="btn" data-t="photos" data-id="${p.id}" data-s="approved">Onayla</button><button class="btn ghost" data-t="photos" data-id="${p.id}" data-s="rejected">Reddet</button></div>`).join("") || `<p class="hint">Yok.</p>`}
+    <h3 style="font-size:15px;margin:16px 0 4px">Sahiplik başvuruları (${cl.data.length})</h3>
+    ${cl.data.map(c=>`<div class="modrow"><div style="flex:1"><b>${esc(c.business)}</b><div class="hint">${esc(c.contact)} · ${nameOf(c.toilet_id)}</div></div>
+      <button class="btn" data-t="owner_claims" data-id="${c.id}" data-s="approved">Onayla</button><button class="btn ghost" data-t="owner_claims" data-id="${c.id}" data-s="rejected">Reddet</button></div>`).join("") || `<p class="hint">Yok.</p>`}
+    <p class="hint" style="font-size:12px;margin-top:12px">İşletme başvurusunu onaylamadan önce verilen iletişim bilgisinden doğrula.</p>`;
+  body.querySelectorAll("[data-t]").forEach(b=> b.onclick = async ()=>{
+    b.disabled = true;
+    const { error } = await sb.from(b.dataset.t).update({ status:b.dataset.s }).eq("id", b.dataset.id);
+    if (error){ b.disabled = false; return fail(error, "Kaydedilemedi"); }
+    toast(b.dataset.s === "approved" ? "Onaylandı" : "Reddedildi"); render();
+  });
+};
+
+// ---------- Tuvalet ekleme ----------
+VIEWS.add = function(){
+  head.innerHTML = title("Tuvalet ekle", "Vazgeç");
+  const seg = (key, opts) => `<div class="row" data-k="${key}">${opts.map(o=>`<button class="chip" data-v="${o[0]}">${o[1]}</button>`).join("")}</div>`;
+  body.innerHTML = `
+    <p class="hint" style="margin:10px 0 2px">Haritayı kaydırarak 📍 işaretini tuvaletin üstüne getir.</p>
+    <input id="nm" maxlength="80" placeholder="Ad (ör. Kadıköy Halk Kütüphanesi)" class="inp" style="margin-top:8px">
+    ${seg("type", [["pub","Umumi"],["biz","İşletme"],["lib","Kütüphane"]])}
+    ${seg("fee", [["Hayır","Ücretsiz"],["Evet","Ücretli"],["Bilinmiyor","Bilmiyorum"]])}
+    ${seg("access", [["Herkese açık","Herkese açık"],["Müşterilere","Müşterilere"]])}
+    <button class="btn" id="save" style="width:100%">Bu konuma ekle</button>`;
+  const vals = { type:"pub", fee:"Bilinmiyor", access:"Herkese açık" };
+  const paint = ()=> body.querySelectorAll(".row[data-k]").forEach(r=> r.querySelectorAll(".chip").forEach(c=> c.classList.toggle("on", vals[r.dataset.k]===c.dataset.v)));
+  body.querySelectorAll(".row[data-k] .chip").forEach(c=> c.onclick = ()=>{ vals[c.parentElement.dataset.k] = c.dataset.v; paint(); });
+  document.getElementById("back").onclick = back({ name:"list" });
+  const save = document.getElementById("save");
+  save.onclick = async ()=>{
+    const c = targetLatLng();
+    const name = document.getElementById("nm").value.trim() || TYPES[vals.type].label + " tuvaleti";
+    save.disabled = true; save.textContent = "Ekleniyor…";
+    const { data, error } = await sb.from("toilets_added").insert({ lat:c.lat, lon:c.lng, name, ...vals }).select().single();
+    if (error){ save.disabled = false; save.textContent = "Bu konuma ekle"; return fail(error, "Eklenemedi"); }
+    const t = fromRow(data);
+    added.push(t); statsMap[t.id] = { n:0, avg:0, reports:0 }; statsFetched.add(t.id); saveCache(); drawMarkers();
+    toast("Eklendi · 2 kişi onaylayınca doğrulanır"); openDetail(t.id);
+  };
+  paint();
+};
+// the crosshair sits above the sheet, so convert its screen point to a map position
+function targetLatLng(){ const el = document.getElementById("cross").getBoundingClientRect(); return map.containerPointToLatLng([el.left+el.width/2, el.bottom]); }
+
+document.getElementById("addBtn").onclick = ()=>{ if (!user) return needLogin(); view={name:"add"}; render(); };
+
+// ---------- Ana ekrana ekleme (yalnızca https üzerinden yayındayken) ----------
+if (location.protocol === "https:" && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+
+drawMarkers(); render(); loadArea();
+</script>
+</body>
+</html>
